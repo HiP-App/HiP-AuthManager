@@ -92,27 +92,41 @@ app.get('/Users', checkJwt, checkRole, function (req, res) {
     });
 });
 
-function changeRole (roles, req, res) {
-    // TODO: Check wether this user is an administrator - if yes, do not remove their admin role!
-    requestToken(function (token) {
-        const options = {
-            method: 'PATCH',
-            url: process.env.MANAGEMENTAUDIENCE + 'users/' + req.params.id,
-            headers: {
-                authorization: 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ app_metadata: { roles: roles } })
-        };
-        request(options, function (error, response, body) {
-            if (error) {
-                console.error(error);
-                res.status(response ? response.statusCode : 400).send();
-            } else {
-                res.append('Content-Type', 'application/json');
-                res.status(response.statusCode).send(body);
-            }
-        });
+function isAdmin (id, token, cb) {
+    const options = {
+        url: process.env.MANAGEMENTAUDIENCE + 'users/' + id,
+        headers: {
+            authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json'
+        }
+    };
+    request(options, function (error, response, body) {
+        if (body.app_metadata && Array.isArray(body.app_metadata.roles)) {
+            cb(body.app_metadata.roles.includes(ADMIN));
+        } else {
+            cb(false);
+        }
+    });
+}
+
+function changeRole (roles, token, req, res) {
+    const options = {
+        method: 'PATCH',
+        url: process.env.MANAGEMENTAUDIENCE + 'users/' + req.params.id,
+        headers: {
+            authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ app_metadata: { roles: roles } })
+    };
+    request(options, function (error, response, body) {
+        if (error) {
+            console.error(error);
+            res.status(response ? response.statusCode : 400).send();
+        } else {
+            res.append('Content-Type', 'application/json');
+            res.status(response.statusCode).send(body);
+        }
     });
 }
 
@@ -121,7 +135,15 @@ app.put('/Users/:id/ChangeRole', checkJwt, checkRole, function (req, res, next) 
     if (roles.includes(ADMIN)) {
         next(forbidden('cannot grant anyone the adminstrator role using this API'));
     } else {
-        changeRole(roles, req, res);
+        requestToken(function (token) {
+            isAdmin(req.params.id, token, function (admin) {
+                if (admin) {
+                    changeRole(roles, token, req, res);
+                } else {
+                    next(forbidden('cannot edit administrators roles using this API'));
+                }
+            })
+        })
     }
 });
 
