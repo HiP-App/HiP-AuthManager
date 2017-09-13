@@ -1,5 +1,7 @@
 const bodyParser = require('body-parser');
 const express = require('express');
+const jwt = require('express-jwt');
+const jwksRsa = require('jwks-rsa');
 const request = require('request');
 
 require('dotenv').config();
@@ -15,6 +17,47 @@ const app = express();
 
 app.use(bodyParser.json());
 
+// Authentication middleware. When used, the
+// access token must exist and be verified against
+// the Auth0 JSON Web Key Set
+const checkJwt = jwt({
+  // Dynamically provide a signing key
+  // based on the kid in the header and
+  // the singing keys provided by the JWKS endpoint.
+  secret: jwksRsa.expressJwtSecret({
+    cache: true,
+    rateLimit: true,
+    jwksRequestsPerMinute: 5,
+    jwksUri: `${process.env.AUTHORITY}.well-known/jwks.json`
+  }),
+
+  // Validate the audience and the issuer.
+  audience: process.env.AUDIENCE,
+  issuer: process.env.AUTHORITY,
+  algorithms: ['RS256']
+});
+
+const rolesIdentifier = 'https://hip.cs.upb.de/roles';
+
+function checkRole (req, res, next) {
+    const rolesExist = req.user &&
+        req.user[rolesIdentifier] &&
+        Array.isArray(req.user[rolesIdentifier]);
+    const validRole = rolesExist && (
+        req.user[rolesIdentifier].includes('Administrator') ||
+        req.user[rolesIdentifier].includes('Supervisor')
+    );
+    if (validRole) {
+        next();
+    } else {
+        const error = new Error(
+          'permission_denied', { message: 'Permission denied' }
+        );
+        error.statusCode = 403;
+        next(error);
+    }
+}
+
 // NOTE: Currently, a new token is requested for every API call.
 // Not sure if this could cause problems - if yes, save the token and
 // re-use until it expires, then request a new one
@@ -26,7 +69,7 @@ function requestToken(cb) {
     });
 }
 
-app.get('/Users', function (req, res) {
+app.get('/Users', checkJwt, checkRole, function (req, res) {
     requestToken(function (token) {
         const options = {
             url: process.env.MANAGEMENTAUDIENCE + 'users',
@@ -44,7 +87,7 @@ app.get('/Users', function (req, res) {
     });
 });
 
-app.put('/Users/:id/ChangeRole', function (req, res) {
+app.put('/Users/:id/ChangeRole', checkJwt, function (req, res) {
     const roles = req.body.roles;
     requestToken(function (token) {
         const options = {
