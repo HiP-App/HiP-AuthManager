@@ -37,24 +37,29 @@ const checkJwt = jwt({
   algorithms: ['RS256']
 });
 
+function forbidden (message) {
+    const error = new Error(
+      'permission_denied', { message: message || 'Permission denied' }
+    );
+    error.statusCode = 403;
+    return error;
+}
+
 const rolesIdentifier = 'https://hip.cs.upb.de/roles';
+const ADMIN = 'Administrator';
+const SUPERVISOR = 'Supervisor';
 
 function checkRole (req, res, next) {
     const rolesExist = req.user &&
         req.user[rolesIdentifier] &&
         Array.isArray(req.user[rolesIdentifier]);
-    const validRole = rolesExist && (
-        req.user[rolesIdentifier].includes('Administrator') ||
-        req.user[rolesIdentifier].includes('Supervisor')
-    );
-    if (validRole) {
+    req.user.isAdmin = rolesExist && req.user[rolesIdentifier].includes(ADMIN);
+    req.user.isSupervisor = rolesExist && req.user[rolesIdentifier].includes(SUPERVISOR);
+
+    if (req.user.isAdmin || req.user.isSupervisor) {
         next();
     } else {
-        const error = new Error(
-          'permission_denied', { message: 'Permission denied' }
-        );
-        error.statusCode = 403;
-        next(error);
+        next(forbidden());
     }
 }
 
@@ -87,8 +92,8 @@ app.get('/Users', checkJwt, checkRole, function (req, res) {
     });
 });
 
-app.put('/Users/:id/ChangeRole', checkJwt, function (req, res) {
-    const roles = req.body.roles;
+function changeRole (roles, req, res) {
+    // TODO: Check wether this user is an administrator - if yes, do not remove their admin role!
     requestToken(function (token) {
         const options = {
             method: 'PATCH',
@@ -108,7 +113,16 @@ app.put('/Users/:id/ChangeRole', checkJwt, function (req, res) {
                 res.status(response.statusCode).send(body);
             }
         });
-    })
+    });
+}
+
+app.put('/Users/:id/ChangeRole', checkJwt, checkRole, function (req, res, next) {
+    const roles = req.body.roles;
+    if (roles.includes(ADMIN)) {
+        next(forbidden('cannot grant anyone the adminstrator role using this API'));
+    } else {
+        changeRole(roles, req, res);
+    }
 });
 
 app.listen(process.env.PORT, function () {
