@@ -147,6 +147,10 @@ app.put('/Users/:id/ChangeRole', checkJwt, checkRole, function (req, res, next) 
     }
 });
 
+app.get('/', function (req, res) {
+    res.status(200).send('PUT: /Users/:id/ChangeRole, GET: /Users');
+});
+
 app.listen(process.env.PORT, function () {
     console.log('HiP-AuthManager running on ' + process.env.PORT)
 });
