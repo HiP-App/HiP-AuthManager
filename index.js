@@ -73,8 +73,12 @@ function checkRole (req, res, next) {
 // Not sure if this could cause problems - if yes, save the token and
 // re-use until it expires, then request a new one
 function requestToken(cb) {
+    console.log('Trying to get a token using config:' + JSON.stringify(authOptions));
     request(authOptions, function (error, response, body) {
-        if (error) throw new Error(error);
+        if (error) {
+            console.error(error);
+            throw new Error(error);
+        }
         const content = JSON.parse(body);
         cb(content.access_token);
     });
